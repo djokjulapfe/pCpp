@@ -99,11 +99,13 @@ public:
 	}
 
 	void printVar() {
-		for (auto &x : var) {
-			if (x != *var.rbegin())
-			std::cout << "[" << x.first << ", " << x.second << ", " << RAM[x.second] << "]" << ", ";
-		}
-		std::cout << "[" << (*var.rbegin()).first << (*var.rbegin()).second << ", " << RAM[(*var.rbegin()).second] << "]\n";
+		if (var.size() > 0) {
+			for (auto &x : var) {
+				if (x != *var.rbegin())
+				std::cout << "[" << x.first << ", " << x.second << ", " << RAM[x.second] << "]" << ", ";
+			}
+			std::cout << "[" << (*var.rbegin()).first << ", " << (*var.rbegin()).second << ", " << RAM[(*var.rbegin()).second] << "]\n";
+		} else std::cout << "You must first compile the code\n";
 	}
 
 	void printRam(const int & a, const int & b) {
@@ -138,8 +140,7 @@ public:
 		if (arg[0] == '(') {
 			ret = arg.substr(1, arg.length() - 2);
 			RAM[programmer] |= 8 << ((2-k) * 4);
-		}
-		else ret = arg;
+		} else ret = arg;
 		return ret;
 	}
 
@@ -157,8 +158,7 @@ public:
 				if (var[arg] < 8) {
 					RAM[programmer++] |= (var[arg] << 8) | 8;
 					RAM[programmer++] = cnst;
-				}
-				else std::cout <<"ERROR: First argument of MOV must have an adress less than 8\n" << std::endl;
+				} else std::cout <<"ERROR: First argument of MOV must have an adress less than 8\n" << std::endl;
 			} else {
 				std::string arg1 = getArgR(line[1], 0);
 				std::string arg2 = getArgR(line[2], 1);
@@ -166,12 +166,31 @@ public:
 				if (var[arg1] < 8 && var[arg2] < 8) {
 					RAM[programmer] |= var[arg1] << 8;
 					RAM[programmer++] |= var[arg2] << 4;
-				}
-				else std::cout << "ERROR: Arguments of MOV must have an adress less than 8\n" << std::endl;
+				} else std::cout << "ERROR: Arguments of MOV must have an adress less than 8\n" << std::endl;
 			}
 		}
 		if (line[0] == "ADD") {
+			RAM[programmer] = 1 << 12;
+			if (isNum(line[1])) {
+				std::cout << "ERROR: First argument of an arithmetic operation mustn't be a number\n" << std::endl;
+			} if (isNum(line[2]) && isNum(line[3])) {
+				std::cout << "ERROR: Only one of the second two arguments" <<
+					"of an arithmetic operation can be a number\n" << std::endl;
+			} else {
+				std::string arg1 {getArgR(line[1], 0)};
+				if (var[arg1] < 8) {
+					std::string arg2, arg3;
+					int16_t cnst;
+					bool hasc{false};
+					if (isNum(line[2])) {
+						hasc = true;
+						cnst = getNum(line[2]);
+					} else if (isNum(line[3])) {
 
+					} else {
+					}
+				} else std::cout << "ERROR: Arguments of an arithmetic operation must have an adress less than 8\n" << std::endl;
+			}
 		}
 		if (line[0] == "IN") { // TODO
 			if (line[2] != "") {
@@ -205,8 +224,7 @@ public:
 				ret.push_back(removeChar(comm));
 				while (ret.size() < 4) ret.push_back("");
 				return ret;
-			}
-			else {
+			} else {
 				ret.push_back("NCMD");
 				return ret;
 			}
@@ -282,21 +300,42 @@ int main(int argc, char const *argv[])
 	K->addLine("MOV (A), B");
 	K->addLine("MOV (A), (B)");
 	K->addLine("MOV (A), #B");
+	/*
 	K->printCode();
 	K->compile();
-	K->printRam(8, 30);
+	K->printRam(8, 30);*/
+	std::cout << "Welcome to the pCpp, a multi-platform compiler and simulator for the picoComputer.\n";
+	std::cout << "To see what you can do, type \"help\" or \"man\"\n";
 	std::string comm{""};
 	while (true) {
 		std::getline(std::cin, comm);
 		if (comm == "list") {
 			K->printCode();
-		} if (comm == "compile") {
+		} else if (comm == "compile") {
 			K->compile();
-		} if (comm == "exit" || comm == "quit") {
+		} else if (comm == "exit" || comm == "quit") {
 			break;
-		} if (comm == "var") {
+		} else if (comm == "var") {
 			K->printVar();
-		}else {
+		} else if (comm == "ram") {
+			int16_t a, b;
+			std::cin >> a >> b;
+			K->printRam(a, b);
+		} else if (comm == "help" || comm == "man") {
+			std::cout << "list - prints the current code you are writing\n";
+			std::cout << "compile - compiles the code and shows any errors you might have made\n";
+			std::cout << "*run - executes the current code\n";
+			std::cout << "*debug - starts the debug mode\n";
+			std::cout << "*step - executes one line of code\n";
+			std::cout << "var - prints all existing variables and their values (run after compiling) in form:\n";
+			std::cout << "\t[name, address, value]\n";
+			std::cout << "ram a b - prints the current state of the ram from adress a to adress b\n";
+			std::cout << "exit | quit - exits the program\n";
+			std::cout << "To change the code, there are few ways:\n";
+			std::cout << "\t1. change a line of code directly, ex.: 5 ADD A, B, C\n";
+			std::cout << "\t2. insert a new line of code, ex.: i4 ADD A, B, C\n";
+			std::cout << "\t3. append a new line of code to the end, ex.: a ADD A, B, C\n";
+		} else {
 			std::string arg = getArg(comm, ' ');
 			if ((arg[0] == 'i' && isNum(arg.substr(1, arg.length() - 1))) || isNum(arg) || arg[0] == 'a') {
 				if(arg[0] == 'a') K->addLine(comm);
