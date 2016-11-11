@@ -18,6 +18,19 @@ void printVec(const T & l) {
 	std::cout << *l.rbegin() << "}" << std::endl;
 }
 
+auto getBin(int16_t i) {
+	std::string ret = "0000 0000 0000 0000";
+	for (int n = 0; n < 4; n++) { //nibble loop
+		for (int b = 0; b < 4; b++) { //bit loop
+			if (i % 2 == 1) {
+				ret[18 - b - 5*n] = '1';
+			}
+			i>>=1;
+		}
+	}
+	return ret;
+}
+
 auto removeChar(std::string test) {
 	test.erase(remove_if(test.begin(), test.end(), isspace), test.end());
 	return test;
@@ -81,11 +94,13 @@ public:
 	}
 	
 	void addLine(const int &i, const std::string &line) {
-		code.insert(code.begin() + i, line);
+		if (line == "RTS") code.insert(code.begin() + i, "RTS ");
+		else code.insert(code.begin() + i, line);
 	}
 
 	void addLine(const std::string &line) {
-		code.push_back(line);
+		if (line == "RTS") code.push_back("RTS ");
+		else code.push_back(line);
 	}
 
 	void replaceLine(const int &i, const std::string &line) {
@@ -110,7 +125,7 @@ public:
 
 	void printRam(const int & a, const int & b) {
 		for (int i = a; i < b; i++) {
-			std::cout << i << ": " << std::bitset<16>(RAM[i]) << std::endl;
+			std::cout << i << ": " << getBin(RAM[i]) << std::endl;
 		}
 	}
 
@@ -257,9 +272,9 @@ public:
 				} else if (line[start + 1] == "0") {
 					arg2 = getArgR(line[start + 2], 1);
 				} else if (line[start + 2] == "0") {
-					arg1 = getArgR(line[start + 1], 1);
+					arg1 = getArgR(line[start + 1], 0);
 				} else {
-					arg1 = getArgR(line[start + 1], 1);
+					arg1 = getArgR(line[start + 1], 0);
 					arg2 = getArgR(line[start + 2], 1);
 				}
 				if (var[arg1] < 8 && var[arg2] < 8) {
@@ -270,17 +285,53 @@ public:
 			}
 		}
 
-		if (line[start] == "IN") { 
-			if (line[start + 2] != "") {
-				if (!isNum(line[start + 2])) {
-					std::cout <<"ERROR: Second argument of IN must be a number\n";
-				} else {
-					RAM[programmer++] = 0b0111000000000000;
-				}
-			} 
+		if (line[start] == "IN" | line[start] == "OUT") { 
+			if      (line[start] == "IN" ) RAM[programmer] = 7 << 12;
+			else if (line[start] == "OUT") RAM[programmer] = 8 << 12;
+			std::string arg1 = getArgR(line[start + 1], 0);
+			if (line[start + 2] == "") {
+				RAM[programmer++] = (var[arg1] << 8) | (8 << 4) | 1;
+			} else if (isNum(line[start + 2]) | line[start + 2][0] == '#') {
+				int16_t cnst = getConstR(line[start + 2]);
+				if (cnst < 16) RAM[programmer++] = (var[arg1] << 8) | (8 << 4) | cnst;
+				else if (cnst < 128) RAM[programmer++] = (var[arg1] << 8) | cnst;
+				else std::cout << "ERROR: Second argument of IN and OUT must be a number less than 128\n";
+			} else std::cout << "ERROR: Second argument of IN and OUT must be a number\n";
 		}
+
+		if (line[start] == "JSR") {
+			RAM[programmer++] = 13 << 12;
+			bool error {true};
+			for (auto &x : label) {
+				if (x.first == line[start + 1]) {
+					error = false;
+					break;
+				}
+			}
+			if (error) std::cout << "ERROR: Label \"" << line[start + 1] << "\" does not exist\n";
+			else {
+				lbSet.insert({line[start + 1], programmer});
+				RAM[programmer++] = 0;
+			}
+		}
+
+		if (line[start] == "RTS") RAM[programmer++] = 14 << 12;
+
 		if (line[start] == "STOP") {
-			
+			RAM[programmer] = 15 << 12;
+			std::string arg1{""}, arg2{""}, arg3{""};
+			if (line[start + 1] != "") {
+				arg1 = getArgR(line[start + 1], 0);
+				if (line[start + 2] != "") {
+					arg2 = getArgR(line[start + 2], 0);
+					if (line[start + 3] != "") {
+						arg3 = getArgR(line[start + 3], 0);
+					}
+				}
+			}
+			RAM[programmer++] |= ((arg1 == "") ? var[arg1] : 0) << 8 |
+			                     ((arg2 == "") ? var[arg2] : 0) << 4 |
+			                     ((arg3 == "") ? var[arg3] : 0);
 		}
 	}
 
@@ -390,6 +441,11 @@ int main(int argc, char const *argv[])
 	K->addLine("MOV A, B, 5");
 	K->addLine("BLAB: BEQ A, B, LAB");
 	K->addLine("LAB: BGT A, 0, BLAB");
+	K->addLine("IN A, 3");
+	K->addLine("OUT B, 5");
+	K->addLine("JSR BLAB");
+	K->addLine("RTS");
+	K->addLine("STOP A, B");
 	/*
 	K->printCode();
 	K->compile();
