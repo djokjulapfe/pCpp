@@ -91,6 +91,14 @@ public:
 		}
 	}
 
+	void printVar() {
+		for (auto &x : var) {
+			if (x != *var.rbegin())
+			std::cout << "[" << x.first << ", " << x.second << "]" << ", ";
+		}
+		std::cout << "[" << (*var.rbegin()).first << (*var.rbegin()).second << "]\n";
+	}
+
 	auto compileLine(std::string comm) {
 		std::vector<std::string> ret;
 		if (hasChar(comm, '=')) {
@@ -131,15 +139,21 @@ public:
 				std::cout << "(l" << it - code.begin() << 
 					") ERROR: Left hand side must be a number:\n" << *it << std::endl;
 			}
-			if (error)
+			if (!error)
 				var.insert(std::make_pair(line[0], getNum(line[2]))); 
 			line = compileLine(*(++it));
 		}
 		while (it != code.end()) {
 			line = compileLine(*it);
-			if(line[0] == "NCMD") {
+			if (line[0] == "NCMD") {
 				std::cout << "(l" << it - code.begin() << 
 					") ERROR: Operation does not exist (or it is lower case):\n" << *it << std::endl;
+			}
+			for (auto &x : line) {
+				if (x != line[0] && !isNum(x) && var.find(x) == var.end()) {
+				std::cout << "(l" << it - code.begin() << 
+					") ERROR: Variable \"" << x << "\" does not exist:\n" << *it << std::endl;
+				}
 			}
 			++it;
 		}
@@ -155,11 +169,11 @@ private:
 int main(int argc, char const *argv[])
 {
 	std::unique_ptr<Kompjuktor> K{new Kompjuktor()};
-	K->addLine("1 = A");
+	K->addLine("A = 1");
 	K->addLine("B = 2");
 	K->addLine("ORG 8");
 	K->addLine("IN A, 2");
-	K->addLine("AdD A, A, B");
+	K->addLine("ADD A, B, A");
 	K->addLine("STOP A");
 	K->printCode();
 	K->compile();
@@ -170,12 +184,15 @@ int main(int argc, char const *argv[])
 			K->printCode();
 		} if (comm == "compile") {
 			K->compile();
-		} if (comm == "exit" || comm = "quit") {
+		} if (comm == "exit" || comm == "quit") {
 			break;
+		} if (comm == "var") {
+			K->printVar();
 		}else {
 			std::string arg = getArg(comm, ' ');
-			if ((arg[0] == 'i' && isNum(arg.substr(1, arg.length() - 1))) || isNum(arg)) {
-				if(arg[0] == 'i') K->addLine(getNum(arg.substr(1, arg.length() - 1)) + 1, comm);
+			if ((arg[0] == 'i' && isNum(arg.substr(1, arg.length() - 1))) || isNum(arg) || arg[0] == 'a') {
+				if(arg[0] == 'a') K->addLine(comm);
+				else if(arg[0] == 'i') K->addLine(getNum(arg.substr(1, arg.length() - 1)) + 1, comm);
 				else K->replaceLine(getNum(arg), comm);
 			}
 		}
