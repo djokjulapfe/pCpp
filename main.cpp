@@ -4,11 +4,12 @@
 #include <memory>
 #include <algorithm>
 #include <map>
+#include <bitset>
 
 #define RAMS 65536
 
 template <typename T>
-void printVec(const T& l) {
+void printVec(const T & l) {
 	std::cout << "{";
 	for (auto &s : l) {
 		if (s != *l.rbegin())
@@ -27,7 +28,7 @@ auto hasChar(const std::string &s, const char &c) {
 	return false;
 }
 
-auto getArg(std::string &s, const char &ref) {
+auto getArg(std::string & s, const char & ref) {
 	int i = 0;
 	bool can = false;
 	while(i < s.length()) {
@@ -45,7 +46,7 @@ auto getArg(std::string &s, const char &ref) {
 	else return std::basic_string<char>("");
 }
 
-auto isNum(const std::string& s) {
+auto isNum(const std::string & s) {
 	if (s == "") return false;
 	for (auto &c : s) {
 		if (c < '0' || c >'9') return false;
@@ -53,12 +54,18 @@ auto isNum(const std::string& s) {
 	return true;
 }
 
-auto getNum(const std::string& s) {
+auto getNum(const std::string & s) {
 	int res = 0;
 	for (int i = 0; i < s.length(); i++) {
 		res = 10*res + s[i] - '0';
 	}
 	return res;
+}
+
+auto getVar(const std::string & s) {
+	if (s[0] == '#') return s.substr(1, s.length() - 1);
+	else if (s[0] == '(' && s[s.length() - 1] == ')') return s.substr(1, s.length() - 2);
+	else return s;
 }
 
 class Kompjuktor
@@ -94,9 +101,90 @@ public:
 	void printVar() {
 		for (auto &x : var) {
 			if (x != *var.rbegin())
-			std::cout << "[" << x.first << ", " << x.second << "]" << ", ";
+			std::cout << "[" << x.first << ", " << x.second << ", " << RAM[x.second] << "]" << ", ";
 		}
-		std::cout << "[" << (*var.rbegin()).first << (*var.rbegin()).second << "]\n";
+		std::cout << "[" << (*var.rbegin()).first << (*var.rbegin()).second << ", " << RAM[(*var.rbegin()).second] << "]\n";
+	}
+
+	void printRam(const int & a, const int & b) {
+		for (int i = a; i < b; i++) {
+			std::cout << i << ": " << std::bitset<16>(RAM[i]) << std::endl;
+		}
+	}
+
+	// adrA = 1
+	// R = 2
+	// A = 100
+	// ORG 8
+	// MOV adrA, #A
+	// IN A, 2 == IN (adrA), 2
+	// MOV R, 0
+	// ADD R, R, (adrA)
+	// ADD adrA, adrA, 1
+	// ADD R, R, (adrA)
+	// MOV adrA, #A
+	// OUT A, 2 == OUT (adrA), 2
+	// STOP
+
+	auto getConstR(const std::string arg) {
+		int16_t cnst;
+		if (arg[0] == '#') cnst = var[arg.substr(1, arg.length() - 1)];
+		else cnst = getNum(arg);
+		return cnst;
+	}
+
+	auto getArgR(const std::string arg, int k) {
+		std::string ret;
+		if (arg[0] == '(') {
+			ret = arg.substr(1, arg.length() - 2);
+			RAM[programmer] |= 8 << ((2-k) * 4);
+		}
+		else ret = arg;
+		return ret;
+	}
+
+	void parseLine(const std::vector<std::string> &line) {
+		std::cout << "Parsing: ";
+		printVec(line);
+		if (line[0] == "MOV") {
+			RAM[programmer] = 0;
+			if (isNum(line[1])) {
+				std::cout <<"ERROR: First argument of MOV must not be a number\n" << std::endl;
+			} else if (isNum(line[2]) || line[2][0] == '#') {
+				int16_t cnst = getConstR(line[2]);
+				std::string arg = getArgR(line[1], 0);
+
+				if (var[arg] < 8) {
+					RAM[programmer++] |= (var[arg] << 8) | 8;
+					RAM[programmer++] = cnst;
+				}
+				else std::cout <<"ERROR: First argument of MOV must have an adress less than 8\n" << std::endl;
+			} else {
+				std::string arg1 = getArgR(line[1], 0);
+				std::string arg2 = getArgR(line[2], 1);
+
+				if (var[arg1] < 8 && var[arg2] < 8) {
+					RAM[programmer] |= var[arg1] << 8;
+					RAM[programmer++] |= var[arg2] << 4;
+				}
+				else std::cout << "ERROR: Arguments of MOV must have an adress less than 8\n" << std::endl;
+			}
+		}
+		if (line[0] == "ADD") {
+
+		}
+		if (line[0] == "IN") { // TODO
+			if (line[2] != "") {
+				if (!isNum(line[2])) {
+					std::cout <<"ERROR: Second argument of IN must be a number\n" << std::endl;
+				} else {
+					RAM[programmer++] = 0b0111000000000000;
+				}
+			} 
+		}
+		if (line[0] == "STOP") {
+			
+		}
 	}
 
 	auto compileLine(std::string comm) {
@@ -115,6 +203,7 @@ public:
 					ret.push_back(removeChar(arg));
 				}
 				ret.push_back(removeChar(comm));
+				while (ret.size() < 4) ret.push_back("");
 				return ret;
 			}
 			else {
@@ -144,15 +233,24 @@ public:
 			line = compileLine(*(++it));
 		}
 		while (it != code.end()) {
+			bool error {false};
 			line = compileLine(*it);
 			if (line[0] == "NCMD") {
+				error = true;
 				std::cout << "(l" << it - code.begin() << 
 					") ERROR: Operation does not exist (or it is lower case):\n" << *it << std::endl;
 			}
 			for (auto &x : line) {
-				if (x != line[0] && !isNum(x) && var.find(x) == var.end()) {
-				std::cout << "(l" << it - code.begin() << 
-					") ERROR: Variable \"" << x << "\" does not exist:\n" << *it << std::endl;
+				if (x != line[0] && !isNum(x) && x != "" && var.find(getVar(x)) == var.end()) {
+					error = true;
+					std::cout << "(l" << it - code.begin() << 
+						") ERROR: Variable \"" << getVar(x) << "\" does not exist:\n" << *it << std::endl;
+				}
+			}
+			if (!error) {
+				if (line[0] == "ORG") programmer = getNum(line[1]);
+				else {
+					parseLine(line);
 				}
 			}
 			++it;
@@ -160,10 +258,14 @@ public:
 	}
 
 private:
+	//Computer
+	int16_t RAM[RAMS];
+	int16_t PC, SP; //Program Counter, Stac Pointer
+	//Compiler
 	std::vector<std::string> code;
 	std::vector<std::string> ops;
-	int RAM[RAMS];
-	std::map<std::string, int>  var;
+	std::map<std::string, int16_t>  var;
+	int16_t programmer;
 };
 
 int main(int argc, char const *argv[])
@@ -172,11 +274,17 @@ int main(int argc, char const *argv[])
 	K->addLine("A = 1");
 	K->addLine("B = 2");
 	K->addLine("ORG 8");
-	K->addLine("IN A, 2");
-	K->addLine("ADD A, B, A");
-	K->addLine("STOP A");
+	K->addLine("MOV A, 2");
+	K->addLine("MOV (A), 2");
+	K->addLine("MOV A, B");
+	K->addLine("MOV A, (B)");
+	K->addLine("MOV A, #B");
+	K->addLine("MOV (A), B");
+	K->addLine("MOV (A), (B)");
+	K->addLine("MOV (A), #B");
 	K->printCode();
 	K->compile();
+	K->printRam(8, 30);
 	std::string comm{""};
 	while (true) {
 		std::getline(std::cin, comm);
