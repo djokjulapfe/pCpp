@@ -73,7 +73,7 @@ class Kompjuktor
 public:
 	Kompjuktor() {
 		ops.insert(ops.end(), { "MOV", "ADD", "SUB", "MUL", "DIV", "BEQ",
-								"BGT", "JSR", "RTS", "IN", "OUT", "STOP", "ORG"});
+		                        "BGT", "JSR", "RTS", "IN", "OUT", "STOP", "ORG"});
 	}
 
 	~Kompjuktor() {
@@ -144,64 +144,142 @@ public:
 		return ret;
 	}
 
+	void genLabelList() {
+		for (auto &l : code) {
+			if (hasChar(l, ':')) {
+				label.insert({l.substr(0, l.find(':')), 0});
+			}
+		}
+	}
+
+	void setLabels() {
+		for (auto &l : lbSet) {
+			RAM[l.second] = label[l.first];
+		}
+	}
+
 	void parseLine(const std::vector<std::string> &line) {
 		std::cout << "Parsing: ";
 		printVec(line);
-		if (line[0] == "MOV") {
+		int start{0};
+		if (line[0][line[0].length() - 1] == ':') {
+			start++;
+			label[line[0].substr(0, line[0].length() - 1)] = programmer;
+		}
+
+		if (line[start] == "MOV") {
 			RAM[programmer] = 0;
-			if (isNum(line[1])) {
-				std::cout <<"ERROR: First argument of MOV must not be a number\n" << std::endl;
-			} else if (isNum(line[2]) || line[2][0] == '#') {
-				int16_t cnst = getConstR(line[2]);
-				std::string arg = getArgR(line[1], 0);
+			if (isNum(line[start + 1])) {
+				std::cout <<"ERROR: First argument of MOV must not be a number\n";
+			} else if (isNum(line[start + 2]) || line[start + 2][0] == '#') {
+				int16_t cnst = getConstR(line[start + 2]);
+				std::string arg = getArgR(line[start + 1], 0);
 
 				if (var[arg] < 8) {
 					RAM[programmer++] |= (var[arg] << 8) | 8;
 					RAM[programmer++] = cnst;
-				} else std::cout <<"ERROR: First argument of MOV must have an adress less than 8\n" << std::endl;
+				} else std::cout << "ERROR: First argument of MOV must have an adress less than 8\n";
+			} else if (isNum(line[start + 3])) {
+				int16_t cnst = getConstR(line[start + 3]);
+				std::string arg1 = getArgR(line[start + 1], 0);
+				std::string arg2 = getArgR(line[start + 2], 1);
+				if (var[arg1] < 8 && var[arg2] < 8) {
+					if (cnst < 8) RAM[programmer++] = (var[arg1] << 8) | (var[arg2] << 4) | cnst;
+					else {
+						RAM[programmer++] = (var[arg1] << 8) | (var[arg2] << 4) | 8;
+						RAM[programmer++] = cnst;
+					}
+				} else std::cout << "ERROR: Arguments of MOV must have an adress les than 8\n";
 			} else {
-				std::string arg1 = getArgR(line[1], 0);
-				std::string arg2 = getArgR(line[2], 1);
+				std::string arg1 = getArgR(line[start + 1], 0);
+				std::string arg2 = getArgR(line[start + 2], 1);
 
 				if (var[arg1] < 8 && var[arg2] < 8) {
 					RAM[programmer] |= var[arg1] << 8;
 					RAM[programmer++] |= var[arg2] << 4;
-				} else std::cout << "ERROR: Arguments of MOV must have an adress less than 8\n" << std::endl;
+				} else std::cout << "ERROR: Arguments of MOV must have an adress less than 8\n";
 			}
 		}
-		if (line[0] == "ADD") {
-			RAM[programmer] = 1 << 12;
-			if (isNum(line[1])) {
-				std::cout << "ERROR: First argument of an arithmetic operation mustn't be a number\n" << std::endl;
-			} if (isNum(line[2]) && isNum(line[3])) {
+
+		if (line[start] == "ADD" || line[start] == "SUB" || line[start] == "MUL" || line[start] == "DIV") {
+			if      (line[start] == "ADD") RAM[programmer] = 1 << 12;
+			else if (line[start] == "SUB") RAM[programmer] = 2 << 12;
+			else if (line[start] == "MUL") RAM[programmer] = 3 << 12;
+			else if (line[start] == "DIV") RAM[programmer] = 4 << 12; 
+			if (isNum(line[start + 1])) {
+				std::cout << "ERROR: First argument of an arithmetic operation mustn't be a number\n";
+			} if (isNum(line[start + 2]) && isNum(line[start + 3])) {
 				std::cout << "ERROR: Only one of the second two arguments" <<
 					"of an arithmetic operation can be a number\n" << std::endl;
 			} else {
-				std::string arg1 {getArgR(line[1], 0)};
+				std::string arg1 {getArgR(line[start + 1], 0)};
 				if (var[arg1] < 8) {
 					std::string arg2, arg3;
 					int16_t cnst;
 					bool hasc{false};
-					if (isNum(line[2])) {
+					if (isNum(line[start + 2]) || line[start + 2][0] == '#') {
 						hasc = true;
-						cnst = getNum(line[2]);
-					} else if (isNum(line[3])) {
-
+						cnst = getConstR(line[start + 2]);
+						arg3 = getArgR(line[start + 3], 2);
+						RAM[programmer] |= 1<<15;
+					} else if (isNum(line[start + 3]) || line[start + 3][0] == '#') {
+						hasc = true;
+						cnst = getConstR(line[start + 3]);
+						arg3 = getArgR(line[start + 2], 2);
+						RAM[programmer] |= 1<<15;
 					} else {
+						arg2 = getArgR(line[start + 2], 1);
+						arg3 = getArgR(line[start + 3], 2);
 					}
-				} else std::cout << "ERROR: Arguments of an arithmetic operation must have an adress less than 8\n" << std::endl;
+					if (var[arg2] < 8 && var[arg3] < 8) {
+						RAM[programmer++] |= (var[arg1] << 8) | (var[arg2] << 4) | var[arg3];
+						if(hasc) RAM[programmer++] = cnst;
+					} else std::cout << "ERROR: 00101Arguments of an arithmetic operation must have an adress less than 8\n";
+				} else std::cout << "ERROR: First argument of an arithmetic operation must have an adress less than 8\n";
 			}
 		}
-		if (line[0] == "IN") { // TODO
-			if (line[2] != "") {
-				if (!isNum(line[2])) {
-					std::cout <<"ERROR: Second argument of IN must be a number\n" << std::endl;
+
+		if (line[start] == "BEQ" || line[start] == "BGT") {
+			if      (line[start] == "BEQ") RAM[programmer] = 5 << 12;
+			else if (line[start] == "BGT") RAM[programmer] = 6 << 12;
+			bool error {true};
+			for (auto &x : label) {
+				if (x.first == line[start + 3]) {
+					error = false;
+					break;
+				}
+			}
+			if (error) std::cout << "ERROR: Label \"" << line[start+3] << "\" does not exist\n";
+			else {
+				std::string arg1 {0}, arg2{0};
+				if (line[start + 1] == "0" && line[start + 2] == "0") {
+					std::cout << "ERROR: Can't compare two zero values\n";
+				} else if (line[start + 1] == "0") {
+					arg2 = getArgR(line[start + 2], 1);
+				} else if (line[start + 2] == "0") {
+					arg1 = getArgR(line[start + 1], 1);
+				} else {
+					arg1 = getArgR(line[start + 1], 1);
+					arg2 = getArgR(line[start + 2], 1);
+				}
+				if (var[arg1] < 8 && var[arg2] < 8) {
+					RAM[programmer++] |= (var[arg1] << 8) | (var[arg2] << 4);
+					lbSet.insert({line[start + 3], programmer});
+					RAM[programmer++] = 0;
+				}
+			}
+		}
+
+		if (line[start] == "IN") { 
+			if (line[start + 2] != "") {
+				if (!isNum(line[start + 2])) {
+					std::cout <<"ERROR: Second argument of IN must be a number\n";
 				} else {
 					RAM[programmer++] = 0b0111000000000000;
 				}
 			} 
 		}
-		if (line[0] == "STOP") {
+		if (line[start] == "STOP") {
 			
 		}
 	}
@@ -214,6 +292,12 @@ public:
 			ret.push_back("=");
 			ret.push_back(removeChar(comm.substr(f + 1, comm.length() - f - 1))); 
 		} else {
+			if (hasChar(comm, ':')) {
+				int f = comm.find(':');
+				ret.push_back(removeChar(comm.substr(0, f+1)));
+				comm = comm.substr(f + 1, comm.length() - f - 1);
+				while(comm.find(' ') == 0) comm = comm.substr(1, comm.length() - 1);
+			}
 			std::string arg = getArg(comm, ' ');
 			if (std::find(ops.begin(), ops.end(), arg) != ops.end()) {
 				ret.push_back(removeChar(arg));
@@ -232,6 +316,7 @@ public:
 	}
 
 	void compile() {
+		genLabelList();
 		auto it = code.begin();
 		std::vector<std::string> line = compileLine(*it);
 		while (line[1] == "=") {
@@ -253,18 +338,25 @@ public:
 		while (it != code.end()) {
 			bool error {false};
 			line = compileLine(*it);
-			if (line[0] == "NCMD") {
+			//printVec(line);
+			int start {0};
+			if (line[0][line[0].length() - 1] == ':') start++;
+
+			if (line[start] == "NCMD") {
 				error = true;
 				std::cout << "(l" << it - code.begin() << 
 					") ERROR: Operation does not exist (or it is lower case):\n" << *it << std::endl;
 			}
+
 			for (auto &x : line) {
-				if (x != line[0] && !isNum(x) && x != "" && var.find(getVar(x)) == var.end()) {
+				if (x != line[0] && x!=line[start] && !isNum(x) && x != "" &&
+					var.find(getVar(x)) == var.end() && label.find(x) == label.end()) {
 					error = true;
 					std::cout << "(l" << it - code.begin() << 
 						") ERROR: Variable \"" << getVar(x) << "\" does not exist:\n" << *it << std::endl;
 				}
 			}
+
 			if (!error) {
 				if (line[0] == "ORG") programmer = getNum(line[1]);
 				else {
@@ -273,6 +365,7 @@ public:
 			}
 			++it;
 		}
+		setLabels();
 	}
 
 private:
@@ -282,7 +375,9 @@ private:
 	//Compiler
 	std::vector<std::string> code;
 	std::vector<std::string> ops;
-	std::map<std::string, int16_t>  var;
+	std::map<std::string, int16_t> lbSet;
+	std::map<std::string, int16_t> label;
+	std::map<std::string, int16_t> var;
 	int16_t programmer;
 };
 
@@ -292,14 +387,9 @@ int main(int argc, char const *argv[])
 	K->addLine("A = 1");
 	K->addLine("B = 2");
 	K->addLine("ORG 8");
-	K->addLine("MOV A, 2");
-	K->addLine("MOV (A), 2");
-	K->addLine("MOV A, B");
-	K->addLine("MOV A, (B)");
-	K->addLine("MOV A, #B");
-	K->addLine("MOV (A), B");
-	K->addLine("MOV (A), (B)");
-	K->addLine("MOV (A), #B");
+	K->addLine("MOV A, B, 5");
+	K->addLine("BLAB: BEQ A, B, LAB");
+	K->addLine("LAB: BGT A, 0, BLAB");
 	/*
 	K->printCode();
 	K->compile();
