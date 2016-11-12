@@ -89,6 +89,7 @@ class Kompjuktor
 {
 public:
 	Kompjuktor() {
+		debug_mode = false;
 		ops.insert(ops.end(), { "MOV", "ADD", "SUB", "MUL", "DIV", "BEQ",
 		                        "BGT", "JSR", "RTS", "IN", "OUT", "STOP", "ORG"});
 	}
@@ -173,6 +174,10 @@ public:
 		for (auto &l : lbSet) {
 			RAM[l.second] = label[l.first];
 		}
+	}
+
+	void debug() {
+		debug_mode = !debug_mode;
 	}
 
 	void parseLine(const std::vector<std::string> &line) {
@@ -369,6 +374,9 @@ public:
 	}
 
 	void compile() {
+		lbSet.clear();
+		label.clear();
+		var.clear();
 		genLabelList();
 		auto it = code.begin();
 		std::vector<std::string> line = compileLine(*it);
@@ -416,6 +424,7 @@ public:
 					PC0 = programmer;
 				}
 				else {
+					if (debug_mode) dbg.insert({programmer, it - code.begin()});
 					parseLine(line);
 				}
 			}
@@ -427,115 +436,127 @@ public:
 	void execute() {
 		PC = PC0;
 		SP = RAMS - 1;
-		while (PC < RAMS) {
-			if (PC == 15) break;
-			int arg1 = getArg(RAM[PC], 0);
-			int arg2 = getArg(RAM[PC], 1);
-			int arg3 = getArg(RAM[PC], 2);
-			int arg4 = getArg(RAM[PC], 3);
-			//printRam(1, 3);
-			//std::cout << PC << std::endl;
-			//std::cout << getBin(RAM[PC]) << std::endl;
-			//std::cout << arg1 << " " << arg2 << " " << arg3 << " " << arg4<< std::endl;
-			if (arg1 == 0) {
-				//std::cout << "MOV";
-				if (arg4 == 0) RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)];
-				else if (arg4 == 8) RAM[ramLoc(arg2)] = RAM[++PC];
-				else if (arg4 == 0xf || arg4 < 8) {
-					int n {0};
-					PC++;
-					if (arg4 == 0xf) n = RAM[++PC];
-					else n = arg4;
-					int rl1 = ramLoc(arg2);
-					int rl2 = ramLoc(arg3);
-					for (int i = 0; i < n; i++) {
-						RAM[rl1 + i] = RAM[rl2 + i];
-					}
-				}
+		if (debug_mode) {
+			std::cout << "WARNING: You are in debug mode, do you whant to run in normal mode? [Y/n]: \n";
+			std::string x;
+			std::getline(std::cin, x);
+			if (x == "" || x[0] == 'y' || x[0] == 'Y') {
+				debug_mode = false;
+			} else return;
+		}
+		while (getArg(RAM[PC], 0) != 0xf) {
+			step();
+		}
+		step();
+	}
+
+	void step() {
+		int arg1 = getArg(RAM[PC], 0);
+		int arg2 = getArg(RAM[PC], 1);
+		int arg3 = getArg(RAM[PC], 2);
+		int arg4 = getArg(RAM[PC], 3);
+		if (debug_mode) {
+			std::cout << "Line: " << code[dbg[PC]] << std::endl;
+			std::cout << "RAM: " << getBin(RAM[PC]) << std::endl;
+			if (dbg.find(PC+1) == dbg.end()) std::cout << "     " << getBin(RAM[PC + 1]) << std::endl;
+		}
+		if (arg1 == 0) {
+			//std::cout << "MOV";
+			if (arg4 == 0) RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)];
+			else if (arg4 == 8) RAM[ramLoc(arg2)] = RAM[++PC];
+			else if (arg4 == 0xf || arg4 < 8) {
+				int n {0};
 				PC++;
-			} else if (arg1%8 == 1 || arg1%8 == 2 || arg1%8 == 3 || arg1%8 == 4) {
-				//std::cout << "ADD";
-				if (arg1 >> 3 == 0) {
-					switch (arg1%8) {
-					case 1:
-						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] + RAM[ramLoc(arg4)];
-						break;
-					case 2:
-						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] - RAM[ramLoc(arg4)];
-						break;
-					case 3:
-						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] * RAM[ramLoc(arg4)];
-						break;
-					case 4:
-						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] / RAM[ramLoc(arg4)];
-						break;
-					}
-				} else {
-					switch (arg1%8) {
-					case 1:
-						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] + RAM[++PC];
-						break;
-					case 2:
-						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] - RAM[++PC];
-						break;
-					case 3:
-						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] * RAM[++PC];
-						break;
-					case 4:
-						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] / RAM[++PC];
-						break;
-					}
+				if (arg4 == 0xf) n = RAM[++PC];
+				else n = arg4;
+				int rl1 = ramLoc(arg2);
+				int rl2 = ramLoc(arg3);
+				for (int i = 0; i < n; i++) {
+					RAM[rl1 + i] = RAM[rl2 + i];
 				}
-				PC++;
-			} else if (arg1 == 5) {
-				//std::cout << "BEQ";
-				if(arg4 < 8) {
-					if (arg2 == 0) if (0 == RAM[ramLoc(arg3)]) PC = arg4;
-					else if (arg3 == 0) if (RAM[ramLoc(arg2)] == 0) PC = arg4;
-					else if (RAM[ramLoc(arg2)] == RAM[ramLoc(arg3)]) PC = arg4;
-				} else {
-					if (arg2 == 0) if (0 == RAM[ramLoc(arg3)]) PC = RAM[++PC];
-					else if (arg3 == 0) if (RAM[ramLoc(arg2)] == 0) PC = RAM[++PC];
-					else if (RAM[ramLoc(arg2)] == RAM[ramLoc(arg3)]) PC = RAM[++PC];
+			}
+			PC++;
+		} else if (arg1%8 == 1 || arg1%8 == 2 || arg1%8 == 3 || arg1%8 == 4) {
+			//std::cout << "ADD";
+			if (arg1 >> 3 == 0) {
+				switch (arg1%8) {
+				case 1:
+					RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] + RAM[ramLoc(arg4)];
+					break;
+				case 2:
+					RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] - RAM[ramLoc(arg4)];
+					break;
+				case 3:
+					RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] * RAM[ramLoc(arg4)];
+					break;
+				case 4:
+					RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] / RAM[ramLoc(arg4)];
+					break;
 				}
-			} else if (arg1 == 6) {
-				//std::cout << "BGT";
-				if(arg4 < 8) {
-					if (arg2 == 0) if (0 > RAM[ramLoc(arg3)]) PC = arg4;
-					else if (arg3 == 0) if (RAM[ramLoc(arg2)] > 0) PC = arg4;
-					else if (RAM[ramLoc(arg2)] > RAM[ramLoc(arg3)]) PC = arg4;
-				} else {
-					if (arg2 == 0) if (0 > RAM[ramLoc(arg3)]) PC = RAM[++PC];
-					else if (arg3 == 0) if (RAM[ramLoc(arg2)] > 0) PC = RAM[++PC];
-					else if (RAM[ramLoc(arg2)] > RAM[ramLoc(arg3)]) PC = RAM[++PC];
+			} else {
+				switch (arg1%8) {
+				case 1:
+					RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] + RAM[++PC];
+					break;
+				case 2:
+					RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] - RAM[++PC];
+					break;
+				case 3:
+					RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] * RAM[++PC];
+					break;
+				case 4:
+					RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] / RAM[++PC];
+					break;
 				}
-			} else if (arg1 == 7 || arg1 == 8) {
-				//std::cout << "IO";
-				int n {1};
-				if (arg3 == 8) n = arg4;
-				else n = arg4 + (arg3 << 4);
-				int s {ramLoc(arg2)};
-				if (arg1 == 7) for (int i = 0; i < n; ++i) std::cin >> RAM[s + i];
-				if (arg1 == 8) for (int i = 0; i < n; ++i) std::cout << RAM[s + i] << std::endl;
-				PC++;
-			} else if (arg1 == 13) {
-				//std::cout << "JSR";
-				RAM[SP--] = PC;
-				PC = RAM[++PC];
-			} else if (arg1 == 14) {
-				//std::cout << "RTS";
-				PC = RAM[++SP];
-			} else if (arg1 == 15) {
-				if (arg2 != 0) {
-					std::cout << RAM[arg2%8] << " ";
-					if (arg3 != 0) {
-						std::cout << RAM[arg3%8] << " ";
-						if (arg4 != 0) {
-							std::cout << RAM[arg4%8] << std::endl;
-						} else std::cout << std::endl;
+			}
+			PC++;
+		} else if (arg1 == 5) {
+			//std::cout << "BEQ";
+			if(arg4 < 8) {
+				if (arg2 == 0) if (0 == RAM[ramLoc(arg3)]) PC = arg4;
+				else if (arg3 == 0) if (RAM[ramLoc(arg2)] == 0) PC = arg4;
+				else if (RAM[ramLoc(arg2)] == RAM[ramLoc(arg3)]) PC = arg4;
+			} else {
+				if (arg2 == 0) if (0 == RAM[ramLoc(arg3)]) PC = RAM[++PC];
+				else if (arg3 == 0) if (RAM[ramLoc(arg2)] == 0) PC = RAM[++PC];
+				else if (RAM[ramLoc(arg2)] == RAM[ramLoc(arg3)]) PC = RAM[++PC];
+			}
+		} else if (arg1 == 6) {
+			//std::cout << "BGT";
+			if(arg4 < 8) {
+				if (arg2 == 0) if (0 > RAM[ramLoc(arg3)]) PC = arg4;
+				else if (arg3 == 0) if (RAM[ramLoc(arg2)] > 0) PC = arg4;
+				else if (RAM[ramLoc(arg2)] > RAM[ramLoc(arg3)]) PC = arg4;
+			} else {
+				if (arg2 == 0) if (0 > RAM[ramLoc(arg3)]) PC = RAM[++PC];
+				else if (arg3 == 0) if (RAM[ramLoc(arg2)] > 0) PC = RAM[++PC];
+				else if (RAM[ramLoc(arg2)] > RAM[ramLoc(arg3)]) PC = RAM[++PC];
+			}
+		} else if (arg1 == 7 || arg1 == 8) {
+			//std::cout << "IO";
+			int n {1};
+			if (arg3 == 8) n = arg4;
+			else n = arg4 + (arg3 << 4);
+			int s {ramLoc(arg2)};
+			if (arg1 == 7) for (int i = 0; i < n; ++i) std::cin >> RAM[s + i];
+			if (arg1 == 8) for (int i = 0; i < n; ++i) std::cout << RAM[s + i] << std::endl;
+			PC++;
+		} else if (arg1 == 13) {
+			//std::cout << "JSR";
+			RAM[SP--] = PC;
+			PC = RAM[++PC];
+		} else if (arg1 == 14) {
+			//std::cout << "RTS";
+			PC = RAM[++SP];
+		} else if (arg1 == 15) {
+			if (arg2 != 0) {
+				std::cout << RAM[arg2%8] << " ";
+				if (arg3 != 0) {
+					std::cout << RAM[arg3%8] << " ";
+					if (arg4 != 0) {
+						std::cout << RAM[arg4%8] << std::endl;
 					} else std::cout << std::endl;
-				}
-				break;
+				} else std::cout << std::endl;
 			}
 		}
 	}
@@ -550,6 +571,8 @@ private:
 	std::multimap<std::string, short> lbSet;
 	std::map<std::string, short> label;
 	std::map<std::string, short> var;
+	std::map<short, short> dbg;
+	bool debug_mode;
 	unsigned short programmer, PC0;
 };
 
@@ -567,9 +590,13 @@ int main(int argc, char const *argv[])
 	std::cout << "To see what you can do, type \"help\" or \"man\"\n";
 	std::string comm{""};
 	while (true) {
+		std::cout << "Enter a comand: ";
 		std::getline(std::cin, comm);
-		if (comm == "") continue;
-		if (comm == "list") {
+		if (comm == "") {
+			std::cout << "You haven't enterd a command!\n";
+			continue;
+		}
+		else if (comm == "list") {
 			K->printCode();
 		} else if (comm == "compile") {
 			K->compile();
@@ -577,18 +604,27 @@ int main(int argc, char const *argv[])
 			break;
 		} else if (comm == "var") {
 			K->printVar();
-		} else if (comm == "ram") {
-			unsigned short a, b;
-			std::cin >> a >> b;
+		} else if (comm.substr(0, 3) == "ram") {
+			getArg(comm, ' ');
+			unsigned short a = std::stoi(getArg(comm, ' '));
+			unsigned short b = std::stoi(getArg(comm, ' '));
 			K->printRam(a, b);
 		} else if (comm == "run") {
 			K->execute();
+		} else if (comm == "debug") {
+			K->debug();
+			std::cout << "WARNING: This feature is not yet fully implemented\n";
+		} else if (comm == "step") {
+			K->step();
+			std::cout << "WARNING: This feature is not yet fully implemented\n";
 		} else if (comm == "help" || comm == "man") {
 			std::cout << "list - prints the current code you are writing\n";
 			std::cout << "compile - compiles the code and shows any errors you might have made\n";
-			std::cout << "*run - executes the current code\n";
-			std::cout << "*debug - starts the debug mode\n";
-			std::cout << "*step - executes one line of code\n";
+			std::cout << "run - executes the current code\n";
+			std::cout << "debug - starts the debug mode\n";
+			std::cout << "step - executes one line of code\n";
+			std::cout << "*break n - adds a break point on line n\n";
+			std::cout << "*next - executes code until a break point or the end\n";
 			std::cout << "var - prints all existing variables and their values (run after compiling) in form:\n";
 			std::cout << "\t[name, address, value]\n";
 			std::cout << "ram a b - prints the current state of the ram from adress a to adress b\n";
@@ -602,12 +638,11 @@ int main(int argc, char const *argv[])
 			if(!hasChar(comm, ' ')) arg = comm;
 			else arg = getArg(comm, ' ');
 			if (isNum(arg.substr(1, arg.length() - 1)) || isNum(arg) || arg[0] == 'a') {
-				std::cout << arg << std::endl;
 				if(arg[0] == 'a') K->addLine(comm);
 				else if(arg[0] == 'i') K->addLine(getNum(arg.substr(1, arg.length() - 1)) + 1, comm);
 				else if(arg[0] == 'r') K->removeLine(getNum(arg.substr(1, arg.length() - 1)));
 				else K->replaceLine(getNum(arg), comm);
-			}
+			} else std::cout << "You have entered an invalid command, type \"help\" or \"man\"\n";
 		}
 	}
 	std::cout << "Goodbeye!\n";
