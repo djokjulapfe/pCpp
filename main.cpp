@@ -60,7 +60,7 @@ auto getArg(std::string & s, const char & ref) {
 }
 
 auto getArg(const unsigned short & x, const int & i) {
-	return (x >> ((3 - i)*4)) % 0xf;
+	return (x >> ((3 - i)*4)) % 16;
 }
 
 auto isNum(const std::string & s) {
@@ -105,6 +105,10 @@ public:
 	void addLine(const std::string &line) {
 		if (line == "RTS") code.push_back("RTS ");
 		else code.push_back(line);
+	}
+
+	void removeLine(const int & i) {
+		code.erase(code.begin() + i);
 	}
 
 	void replaceLine(const int &i, const std::string &line) {
@@ -172,8 +176,8 @@ public:
 	}
 
 	void parseLine(const std::vector<std::string> &line) {
-		std::cout << "Parsing: ";
-		printVec(line);
+		//std::cout << "Parsing: ";
+		//printVec(line);
 		int start{0};
 		if (line[0][line[0].length() - 1] == ':') {
 			start++;
@@ -288,7 +292,7 @@ public:
 			else if (line[start] == "OUT") RAM[programmer] = 8 << 12;
 			std::string arg1 = getArgR(line[start + 1], 0);
 			if (line[start + 2] == "") {
-				RAM[programmer++] = (var[arg1] << 8) | (8 << 4) | 1;
+				RAM[programmer++] |= (var[arg1] << 8) | (8 << 4) | 1;
 			} else if (isNum(line[start + 2]) | line[start + 2][0] == '#') {
 				short cnst = getConstR(line[start + 2]);
 				if (cnst < 16) RAM[programmer++] |= (var[arg1] << 8) | (8 << 4) | cnst;
@@ -423,15 +427,18 @@ public:
 	void execute() {
 		PC = PC0;
 		SP = RAMS - 1;
-		while (RAM[PC] >> 12 != 0xf) {
-			if (PC == 20) break;
+		while (PC < RAMS) {
+			if (PC == 15) break;
 			int arg1 = getArg(RAM[PC], 0);
 			int arg2 = getArg(RAM[PC], 1);
 			int arg3 = getArg(RAM[PC], 2);
 			int arg4 = getArg(RAM[PC], 3);
-			std::cout << PC << std::endl;
-			std::cout << getBin(RAM[PC]) << std::endl;
-			if (arg1 = 0) {
+			//printRam(1, 3);
+			//std::cout << PC << std::endl;
+			//std::cout << getBin(RAM[PC]) << std::endl;
+			//std::cout << arg1 << " " << arg2 << " " << arg3 << " " << arg4<< std::endl;
+			if (arg1 == 0) {
+				//std::cout << "MOV";
 				if (arg4 == 0) RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)];
 				else if (arg4 == 8) RAM[ramLoc(arg2)] = RAM[++PC];
 				else if (arg4 == 0xf || arg4 < 8) {
@@ -446,40 +453,42 @@ public:
 					}
 				}
 				PC++;
-			} else if (arg1 < 5 || (arg1 < 0b1101 && arg1 > 8)) {
+			} else if (arg1%8 == 1 || arg1%8 == 2 || arg1%8 == 3 || arg1%8 == 4) {
+				//std::cout << "ADD";
 				if (arg1 >> 3 == 0) {
 					switch (arg1%8) {
-					case 0:
+					case 1:
 						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] + RAM[ramLoc(arg4)];
 						break;
-					case 1:
+					case 2:
 						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] - RAM[ramLoc(arg4)];
 						break;
-					case 2:
+					case 3:
 						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] * RAM[ramLoc(arg4)];
 						break;
-					case 3:
+					case 4:
 						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] / RAM[ramLoc(arg4)];
 						break;
 					}
 				} else {
 					switch (arg1%8) {
-					case 0:
+					case 1:
 						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] + RAM[++PC];
 						break;
-					case 1:
+					case 2:
 						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] - RAM[++PC];
 						break;
-					case 2:
+					case 3:
 						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] * RAM[++PC];
 						break;
-					case 3:
+					case 4:
 						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] / RAM[++PC];
 						break;
 					}
 				}
 				PC++;
 			} else if (arg1 == 5) {
+				//std::cout << "BEQ";
 				if(arg4 < 8) {
 					if (arg2 == 0) if (0 == RAM[ramLoc(arg3)]) PC = arg4;
 					else if (arg3 == 0) if (RAM[ramLoc(arg2)] == 0) PC = arg4;
@@ -490,6 +499,7 @@ public:
 					else if (RAM[ramLoc(arg2)] == RAM[ramLoc(arg3)]) PC = RAM[++PC];
 				}
 			} else if (arg1 == 6) {
+				//std::cout << "BGT";
 				if(arg4 < 8) {
 					if (arg2 == 0) if (0 > RAM[ramLoc(arg3)]) PC = arg4;
 					else if (arg3 == 0) if (RAM[ramLoc(arg2)] > 0) PC = arg4;
@@ -500,21 +510,32 @@ public:
 					else if (RAM[ramLoc(arg2)] > RAM[ramLoc(arg3)]) PC = RAM[++PC];
 				}
 			} else if (arg1 == 7 || arg1 == 8) {
+				//std::cout << "IO";
 				int n {1};
 				if (arg3 == 8) n = arg4;
 				else n = arg4 + (arg3 << 4);
 				int s {ramLoc(arg2)};
 				if (arg1 == 7) for (int i = 0; i < n; ++i) std::cin >> RAM[s + i];
-				if (arg1 == 8) for (int i = 0; i < n; ++i) std::cout << RAM[s + i];
+				if (arg1 == 8) for (int i = 0; i < n; ++i) std::cout << RAM[s + i] << std::endl;
 				PC++;
-			} else if (arg1 == 0xD) {
+			} else if (arg1 == 13) {
+				//std::cout << "JSR";
 				RAM[SP--] = PC;
 				PC = RAM[++PC];
-			} else if (arg1 == 0xE) {
+			} else if (arg1 == 14) {
+				//std::cout << "RTS";
 				PC = RAM[++SP];
-			} else if (arg1 == 0xf) {
-				std::cout << "Done!";
-				return;
+			} else if (arg1 == 15) {
+				if (arg2 != 0) {
+					std::cout << RAM[arg2%8] << " ";
+					if (arg3 != 0) {
+						std::cout << RAM[arg3%8] << " ";
+						if (arg4 != 0) {
+							std::cout << RAM[arg4%8] << std::endl;
+						} else std::cout << std::endl;
+					} else std::cout << std::endl;
+				}
+				break;
 			}
 		}
 	}
@@ -537,15 +558,17 @@ int main(int argc, char const *argv[])
 	std::unique_ptr<Kompjuktor> K{new Kompjuktor()};
 	K->addLine("A = 1");
 	K->addLine("B = 2");
+	K->addLine("C = 2");
 	K->addLine("ORG 8");
 	K->addLine("IN A, 2");
-	K->addLine("ADD A, A, B");
-	K->addLine("STOP A");
+	K->addLine("ADD C, A, B");
+	K->addLine("STOP A, B, C");
 	std::cout << "Welcome to the pCpp, a multi-platform compiler and simulator for the picoComputer.\n";
 	std::cout << "To see what you can do, type \"help\" or \"man\"\n";
 	std::string comm{""};
 	while (true) {
 		std::getline(std::cin, comm);
+		if (comm == "") continue;
 		if (comm == "list") {
 			K->printCode();
 		} else if (comm == "compile") {
@@ -575,10 +598,14 @@ int main(int argc, char const *argv[])
 			std::cout << "\t2. insert a new line of code, ex.: i4 ADD A, B, C\n";
 			std::cout << "\t3. append a new line of code to the end, ex.: a ADD A, B, C\n";
 		} else {
-			std::string arg = getArg(comm, ' ');
-			if ((arg[0] == 'i' && isNum(arg.substr(1, arg.length() - 1))) || isNum(arg) || arg[0] == 'a') {
+			std::string arg;
+			if(!hasChar(comm, ' ')) arg = comm;
+			else arg = getArg(comm, ' ');
+			if (isNum(arg.substr(1, arg.length() - 1)) || isNum(arg) || arg[0] == 'a') {
+				std::cout << arg << std::endl;
 				if(arg[0] == 'a') K->addLine(comm);
 				else if(arg[0] == 'i') K->addLine(getNum(arg.substr(1, arg.length() - 1)) + 1, comm);
+				else if(arg[0] == 'r') K->removeLine(getNum(arg.substr(1, arg.length() - 1)));
 				else K->replaceLine(getNum(arg), comm);
 			}
 		}
