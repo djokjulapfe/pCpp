@@ -18,7 +18,7 @@ void printVec(const T & l) {
 	std::cout << *l.rbegin() << "}" << std::endl;
 }
 
-auto getBin(int16_t i) {
+auto getBin(unsigned short i) {
 	std::string ret = "0000 0000 0000 0000";
 	for (int n = 0; n < 4; n++) { //nibble loop
 		for (int b = 0; b < 4; b++) { //bit loop
@@ -57,6 +57,10 @@ auto getArg(std::string & s, const char & ref) {
 		return ret;
 	}
 	else return std::basic_string<char>("");
+}
+
+auto getArg(const unsigned short & x, const int & i) {
+	return (x >> ((3 - i)*4)) % 0xf;
 }
 
 auto isNum(const std::string & s) {
@@ -129,22 +133,16 @@ public:
 		}
 	}
 
-	// adrA = 1
-	// R = 2
-	// A = 100
-	// ORG 8
-	// MOV adrA, #A
-	// IN A, 2 == IN (adrA), 2
-	// MOV R, 0
-	// ADD R, R, (adrA)
-	// ADD adrA, adrA, 1
-	// ADD R, R, (adrA)
-	// MOV adrA, #A
-	// OUT A, 2 == OUT (adrA), 2
-	// STOP
+	unsigned short ramLoc(const int & ia) {
+		if ((ia >> 3) == 0) {
+			return ia%8;
+		} else {
+			return RAM[ia%8];
+		}
+	}
 
 	auto getConstR(const std::string arg) {
-		int16_t cnst;
+		short cnst;
 		if (arg[0] == '#') cnst = var[arg.substr(1, arg.length() - 1)];
 		else cnst = getNum(arg);
 		return cnst;
@@ -187,7 +185,7 @@ public:
 			if (isNum(line[start + 1])) {
 				std::cout <<"ERROR: First argument of MOV must not be a number\n";
 			} else if (isNum(line[start + 2]) || line[start + 2][0] == '#') {
-				int16_t cnst = getConstR(line[start + 2]);
+				short cnst = getConstR(line[start + 2]);
 				std::string arg = getArgR(line[start + 1], 0);
 
 				if (var[arg] < 8) {
@@ -195,13 +193,13 @@ public:
 					RAM[programmer++] = cnst;
 				} else std::cout << "ERROR: First argument of MOV must have an adress less than 8\n";
 			} else if (isNum(line[start + 3])) {
-				int16_t cnst = getConstR(line[start + 3]);
+				short cnst = getConstR(line[start + 3]);
 				std::string arg1 = getArgR(line[start + 1], 0);
 				std::string arg2 = getArgR(line[start + 2], 1);
 				if (var[arg1] < 8 && var[arg2] < 8) {
 					if (cnst < 8) RAM[programmer++] = (var[arg1] << 8) | (var[arg2] << 4) | cnst;
 					else {
-						RAM[programmer++] = (var[arg1] << 8) | (var[arg2] << 4) | 8;
+						RAM[programmer++] = (var[arg1] << 8) | (var[arg2] << 4) | 0xf;
 						RAM[programmer++] = cnst;
 					}
 				} else std::cout << "ERROR: Arguments of MOV must have an adress les than 8\n";
@@ -230,7 +228,7 @@ public:
 				std::string arg1 {getArgR(line[start + 1], 0)};
 				if (var[arg1] < 8) {
 					std::string arg2, arg3;
-					int16_t cnst;
+					short cnst;
 					bool hasc{false};
 					if (isNum(line[start + 2]) || line[start + 2][0] == '#') {
 						hasc = true;
@@ -266,7 +264,7 @@ public:
 			}
 			if (error) std::cout << "ERROR: Label \"" << line[start+3] << "\" does not exist\n";
 			else {
-				std::string arg1 {0}, arg2{0};
+				std::string arg1 {""}, arg2 {""};
 				if (line[start + 1] == "0" && line[start + 2] == "0") {
 					std::cout << "ERROR: Can't compare two zero values\n";
 				} else if (line[start + 1] == "0") {
@@ -278,7 +276,7 @@ public:
 					arg2 = getArgR(line[start + 2], 1);
 				}
 				if (var[arg1] < 8 && var[arg2] < 8) {
-					RAM[programmer++] |= (var[arg1] << 8) | (var[arg2] << 4);
+					RAM[programmer++] |= ((arg1 == "" ? 0 : var[arg1]) << 8) | ((arg2 == "" ? 0 : var[arg2]) << 4);
 					lbSet.insert({line[start + 3], programmer});
 					RAM[programmer++] = 0;
 				}
@@ -292,9 +290,9 @@ public:
 			if (line[start + 2] == "") {
 				RAM[programmer++] = (var[arg1] << 8) | (8 << 4) | 1;
 			} else if (isNum(line[start + 2]) | line[start + 2][0] == '#') {
-				int16_t cnst = getConstR(line[start + 2]);
-				if (cnst < 16) RAM[programmer++] = (var[arg1] << 8) | (8 << 4) | cnst;
-				else if (cnst < 128) RAM[programmer++] = (var[arg1] << 8) | cnst;
+				short cnst = getConstR(line[start + 2]);
+				if (cnst < 16) RAM[programmer++] |= (var[arg1] << 8) | (8 << 4) | cnst;
+				else if (cnst < 128) RAM[programmer++] |= (var[arg1] << 8) | cnst;
 				else std::cout << "ERROR: Second argument of IN and OUT must be a number less than 128\n";
 			} else std::cout << "ERROR: Second argument of IN and OUT must be a number\n";
 		}
@@ -318,7 +316,7 @@ public:
 		if (line[start] == "RTS") RAM[programmer++] = 14 << 12;
 
 		if (line[start] == "STOP") {
-			RAM[programmer] = 15 << 12;
+			RAM[programmer] = 0xf << 12;
 			std::string arg1{""}, arg2{""}, arg3{""};
 			if (line[start + 1] != "") {
 				arg1 = getArgR(line[start + 1], 0);
@@ -329,9 +327,9 @@ public:
 					}
 				}
 			}
-			RAM[programmer++] |= ((arg1 == "") ? var[arg1] : 0) << 8 |
-			                     ((arg2 == "") ? var[arg2] : 0) << 4 |
-			                     ((arg3 == "") ? var[arg3] : 0);
+			RAM[programmer++] |= ((arg1 == "") ? 0 : var[arg1]) << 8 |
+			                     ((arg2 == "") ? 0 : var[arg2]) << 4 |
+			                     ((arg3 == "") ? 0 : var[arg3]);
 		}
 	}
 
@@ -409,7 +407,10 @@ public:
 			}
 
 			if (!error) {
-				if (line[0] == "ORG") programmer = getNum(line[1]);
+				if (line[0] == "ORG") {
+					programmer = getNum(line[1]);
+					PC0 = programmer;
+				}
 				else {
 					parseLine(line);
 				}
@@ -419,17 +420,116 @@ public:
 		setLabels();
 	}
 
+	void execute() {
+		PC = PC0;
+		SP = RAMS - 1;
+		while (RAM[PC] >> 12 != 0xf) {
+			if (PC == 20) break;
+			int arg1 = getArg(RAM[PC], 0);
+			int arg2 = getArg(RAM[PC], 1);
+			int arg3 = getArg(RAM[PC], 2);
+			int arg4 = getArg(RAM[PC], 3);
+			std::cout << PC << std::endl;
+			std::cout << getBin(RAM[PC]) << std::endl;
+			if (arg1 = 0) {
+				if (arg4 == 0) RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)];
+				else if (arg4 == 8) RAM[ramLoc(arg2)] = RAM[++PC];
+				else if (arg4 == 0xf || arg4 < 8) {
+					int n {0};
+					PC++;
+					if (arg4 == 0xf) n = RAM[++PC];
+					else n = arg4;
+					int rl1 = ramLoc(arg2);
+					int rl2 = ramLoc(arg3);
+					for (int i = 0; i < n; i++) {
+						RAM[rl1 + i] = RAM[rl2 + i];
+					}
+				}
+				PC++;
+			} else if (arg1 < 5 || (arg1 < 0b1101 && arg1 > 8)) {
+				if (arg1 >> 3 == 0) {
+					switch (arg1%8) {
+					case 0:
+						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] + RAM[ramLoc(arg4)];
+						break;
+					case 1:
+						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] - RAM[ramLoc(arg4)];
+						break;
+					case 2:
+						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] * RAM[ramLoc(arg4)];
+						break;
+					case 3:
+						RAM[ramLoc(arg2)] = RAM[ramLoc(arg3)] / RAM[ramLoc(arg4)];
+						break;
+					}
+				} else {
+					switch (arg1%8) {
+					case 0:
+						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] + RAM[++PC];
+						break;
+					case 1:
+						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] - RAM[++PC];
+						break;
+					case 2:
+						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] * RAM[++PC];
+						break;
+					case 3:
+						RAM[ramLoc(arg2)] = RAM[ramLoc(arg4)] / RAM[++PC];
+						break;
+					}
+				}
+				PC++;
+			} else if (arg1 == 5) {
+				if(arg4 < 8) {
+					if (arg2 == 0) if (0 == RAM[ramLoc(arg3)]) PC = arg4;
+					else if (arg3 == 0) if (RAM[ramLoc(arg2)] == 0) PC = arg4;
+					else if (RAM[ramLoc(arg2)] == RAM[ramLoc(arg3)]) PC = arg4;
+				} else {
+					if (arg2 == 0) if (0 == RAM[ramLoc(arg3)]) PC = RAM[++PC];
+					else if (arg3 == 0) if (RAM[ramLoc(arg2)] == 0) PC = RAM[++PC];
+					else if (RAM[ramLoc(arg2)] == RAM[ramLoc(arg3)]) PC = RAM[++PC];
+				}
+			} else if (arg1 == 6) {
+				if(arg4 < 8) {
+					if (arg2 == 0) if (0 > RAM[ramLoc(arg3)]) PC = arg4;
+					else if (arg3 == 0) if (RAM[ramLoc(arg2)] > 0) PC = arg4;
+					else if (RAM[ramLoc(arg2)] > RAM[ramLoc(arg3)]) PC = arg4;
+				} else {
+					if (arg2 == 0) if (0 > RAM[ramLoc(arg3)]) PC = RAM[++PC];
+					else if (arg3 == 0) if (RAM[ramLoc(arg2)] > 0) PC = RAM[++PC];
+					else if (RAM[ramLoc(arg2)] > RAM[ramLoc(arg3)]) PC = RAM[++PC];
+				}
+			} else if (arg1 == 7 || arg1 == 8) {
+				int n {1};
+				if (arg3 == 8) n = arg4;
+				else n = arg4 + (arg3 << 4);
+				int s {ramLoc(arg2)};
+				if (arg1 == 7) for (int i = 0; i < n; ++i) std::cin >> RAM[s + i];
+				if (arg1 == 8) for (int i = 0; i < n; ++i) std::cout << RAM[s + i];
+				PC++;
+			} else if (arg1 == 0xD) {
+				RAM[SP--] = PC;
+				PC = RAM[++PC];
+			} else if (arg1 == 0xE) {
+				PC = RAM[++SP];
+			} else if (arg1 == 0xf) {
+				std::cout << "Done!";
+				return;
+			}
+		}
+	}
+
 private:
 	//Computer
-	int16_t RAM[RAMS];
-	int16_t PC, SP; //Program Counter, Stac Pointer
+	short RAM[RAMS];
+	unsigned short PC, SP; //Program Counter, Stack Pointer
 	//Compiler
 	std::vector<std::string> code;
 	std::vector<std::string> ops;
-	std::map<std::string, int16_t> lbSet;
-	std::map<std::string, int16_t> label;
-	std::map<std::string, int16_t> var;
-	int16_t programmer;
+	std::multimap<std::string, short> lbSet;
+	std::map<std::string, short> label;
+	std::map<std::string, short> var;
+	unsigned short programmer, PC0;
 };
 
 int main(int argc, char const *argv[])
@@ -438,18 +538,9 @@ int main(int argc, char const *argv[])
 	K->addLine("A = 1");
 	K->addLine("B = 2");
 	K->addLine("ORG 8");
-	K->addLine("MOV A, B, 5");
-	K->addLine("BLAB: BEQ A, B, LAB");
-	K->addLine("LAB: BGT A, 0, BLAB");
-	K->addLine("IN A, 3");
-	K->addLine("OUT B, 5");
-	K->addLine("JSR BLAB");
-	K->addLine("RTS");
-	K->addLine("STOP A, B");
-	/*
-	K->printCode();
-	K->compile();
-	K->printRam(8, 30);*/
+	K->addLine("IN A, 2");
+	K->addLine("ADD A, A, B");
+	K->addLine("STOP A");
 	std::cout << "Welcome to the pCpp, a multi-platform compiler and simulator for the picoComputer.\n";
 	std::cout << "To see what you can do, type \"help\" or \"man\"\n";
 	std::string comm{""};
@@ -464,9 +555,11 @@ int main(int argc, char const *argv[])
 		} else if (comm == "var") {
 			K->printVar();
 		} else if (comm == "ram") {
-			int16_t a, b;
+			unsigned short a, b;
 			std::cin >> a >> b;
 			K->printRam(a, b);
+		} else if (comm == "run") {
+			K->execute();
 		} else if (comm == "help" || comm == "man") {
 			std::cout << "list - prints the current code you are writing\n";
 			std::cout << "compile - compiles the code and shows any errors you might have made\n";
