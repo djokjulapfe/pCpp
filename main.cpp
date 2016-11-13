@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <map>
 #include <bitset>
+#include <set>
 
 #define RAMS 65536
 
@@ -178,6 +179,23 @@ public:
 
 	void debug() {
 		debug_mode = !debug_mode;
+	}
+
+	void add_break(const unsigned short & i) {
+		for (auto &x : dbg) {
+			if (x.second == i) {
+				break_point.insert(x.first);
+				return;
+			}
+		}
+		std::cout << "WARNING: There is no line of code " << i << " or you haven't compiled the code in debug mode\n";
+	}
+
+	void printBreak() {
+		for (auto &x : break_point) {
+			unsigned short val = dbg[x];
+			std::cout << val << ": " << code[val] << std::endl;
+		}
 	}
 
 	void parseLine(const std::vector<std::string> &line) {
@@ -377,6 +395,9 @@ public:
 		lbSet.clear();
 		label.clear();
 		var.clear();
+		dbg.clear();
+		break_point.clear();
+
 		genLabelList();
 		auto it = code.begin();
 		std::vector<std::string> line = compileLine(*it);
@@ -561,6 +582,21 @@ public:
 		}
 	}
 
+	void step_until() {
+		unsigned short PCE {0};
+		for (auto &x : break_point) {
+			if (x > PC) {
+				PCE = x;
+				break;
+			}
+		}
+		if (PCE != 0) {
+			while(PC < PCE) {
+				step();
+			}
+		} else std::cout << "There are no more break points\n";
+	}
+
 private:
 	//Computer
 	short RAM[RAMS];
@@ -568,12 +604,14 @@ private:
 	//Compiler
 	std::vector<std::string> code;
 	std::vector<std::string> ops;
-	std::multimap<std::string, short> lbSet;
-	std::map<std::string, short> label;
-	std::map<std::string, short> var;
-	std::map<short, short> dbg;
-	bool debug_mode;
+	std::multimap<std::string, unsigned short> lbSet;
+	std::map<std::string, unsigned short> label;
+	std::map<std::string, unsigned short> var;
 	unsigned short programmer, PC0;
+	//Debugger
+	std::map<unsigned short, unsigned short> dbg;
+	std::set<unsigned short> break_point;
+	bool debug_mode;
 };
 
 int main(int argc, char const *argv[])
@@ -596,7 +634,7 @@ int main(int argc, char const *argv[])
 			std::cout << "You haven't enterd a command!\n";
 			continue;
 		}
-		else if (comm == "list") {
+		else if (comm == "code") {
 			K->printCode();
 		} else if (comm == "compile") {
 			K->compile();
@@ -606,33 +644,50 @@ int main(int argc, char const *argv[])
 			K->printVar();
 		} else if (comm.substr(0, 3) == "ram") {
 			getArg(comm, ' ');
-			unsigned short a = std::stoi(getArg(comm, ' '));
-			unsigned short b = std::stoi(getArg(comm, ' '));
+			unsigned short a = getNum(getArg(comm, ' '));
+			unsigned short b = getNum(comm);
 			K->printRam(a, b);
 		} else if (comm == "run") {
 			K->execute();
 		} else if (comm == "debug") {
 			K->debug();
-			std::cout << "WARNING: This feature is not yet fully implemented\n";
 		} else if (comm == "step") {
 			K->step();
-			std::cout << "WARNING: This feature is not yet fully implemented\n";
+		} else if (comm.substr(0, 5) == "break") {
+			if (hasChar(comm, ' ')) {
+				getArg(comm, ' ');
+				K->add_break(getNum(comm));
+			} else {
+				K->printBreak();
+			}
+		} else if (comm == "next") {
+			K->step_until();
+		} else if (comm.substr(0, 4) == "load") {
+			std::cout << "WARNING: this feature is not jet implemented\n";
+		} else if (comm.substr(0, 4) == "save") {
+			std::cout << "WARNING: this feature is not jet implemented\n";
 		} else if (comm == "help" || comm == "man") {
-			std::cout << "list - prints the current code you are writing\n";
+			std::cout << "code - prints the current code you are writing\n";
 			std::cout << "compile - compiles the code and shows any errors you might have made\n";
 			std::cout << "run - executes the current code\n";
-			std::cout << "debug - starts the debug mode\n";
-			std::cout << "step - executes one line of code\n";
-			std::cout << "*break n - adds a break point on line n\n";
-			std::cout << "*next - executes code until a break point or the end\n";
 			std::cout << "var - prints all existing variables and their values (run after compiling) in form:\n";
 			std::cout << "\t[name, address, value]\n";
 			std::cout << "ram a b - prints the current state of the ram from adress a to adress b\n";
 			std::cout << "exit | quit - exits the program\n";
+			std::cout << "\n";
 			std::cout << "To change the code, there are few ways:\n";
 			std::cout << "\t1. change a line of code directly, ex.: 5 ADD A, B, C\n";
 			std::cout << "\t2. insert a new line of code, ex.: i4 ADD A, B, C\n";
 			std::cout << "\t3. append a new line of code to the end, ex.: a ADD A, B, C\n";
+			std::cout << "\n";
+			std::cout << "debug - starts the debug mode\n";
+			std::cout << "step - executes one line of code\n";
+			std::cout << "*break n - adds a break point on line n\n";
+			std::cout << "*break - prints all break points\n";
+			std::cout << "*next - executes code until a break point or the end\n";
+			std::cout << "\n";
+			std::cout << "*load <file> - Loads a file as code\n";
+			std::cout << "*save <file> - Saves the code as a file\n";
 		} else {
 			std::string arg;
 			if(!hasChar(comm, ' ')) arg = comm;
