@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
 #include <memory>
@@ -119,7 +120,21 @@ public:
 
 	void printCode() {
 		for (auto it = code.begin(); it != code.end(); ++it) {
-			std::cout << it - code.begin() << " " << *it << std::endl;
+			if (debug_mode) {
+				bool red = false;
+				for (auto &x : break_point) {
+					//std::cout << x << " == " << it - code.begin() << std::endl;
+					if (dbg[x] == it - code.begin()) {
+						red = true;
+						break;
+					}
+				}
+				if (red) std::cout << "\033[1;31m" << (it - code.begin()) << "\033[0m ";
+				else std::cout << it - code.begin() << " ";
+				std::cout << *it << std::endl;
+			} else {
+				std::cout << it - code.begin() << " " << *it << std::endl;
+			}
 		}
 	}
 
@@ -137,6 +152,27 @@ public:
 		for (int i = a; i < b; i++) {
 			std::cout << i << ": " << getBin(RAM[i]) << std::endl;
 		}
+	}
+
+	void saveCode(const std::string &fileName) {
+		std::ofstream outfile;
+		outfile.open(fileName);
+		for (auto &l : code) {
+			outfile << l << std::endl;
+		}
+		outfile.close();
+	}
+
+	void loadCode(const std::string &fileName) {
+		code.clear();
+		std::string line;
+		std::ifstream infile (fileName);
+		if (infile.is_open()) {
+			while (std::getline(infile, line)) {
+				addLine(line);
+			}
+			infile.close();
+		} else std::cout << "\033[1;31mERROR\033[0m: Unable to open file\n";
 	}
 
 	unsigned short ramLoc(const int & ia) {
@@ -182,13 +218,20 @@ public:
 	}
 
 	void add_break(const unsigned short & i) {
+		for (auto &x : break_point) {
+			std::cout << i << " == " << x;
+			if (i == dbg[x]) {
+				break_point.erase(x);
+				return;
+			}
+		}
 		for (auto &x : dbg) {
 			if (x.second == i) {
 				break_point.insert(x.first);
 				return;
 			}
 		}
-		std::cout << "WARNING: There is no line of code " << i << " or you haven't compiled the code in debug mode\n";
+		std::cout << "\033[1;33mWARNING\033[0m: There is no line of code " << i << " or you haven't compiled the code in debug mode\n";
 	}
 
 	void printBreak() {
@@ -210,7 +253,7 @@ public:
 		if (line[start] == "MOV") {
 			RAM[programmer] = 0;
 			if (isNum(line[start + 1])) {
-				std::cout <<"ERROR: First argument of MOV must not be a number\n";
+				std::cout <<"\033[1;31mERROR\033[0m: First argument of MOV must not be a number\n";
 			} else if (isNum(line[start + 2]) || line[start + 2][0] == '#') {
 				short cnst = getConstR(line[start + 2]);
 				std::string arg = getArgR(line[start + 1], 0);
@@ -218,7 +261,7 @@ public:
 				if (var[arg] < 8) {
 					RAM[programmer++] |= (var[arg] << 8) | 8;
 					RAM[programmer++] = cnst;
-				} else std::cout << "ERROR: First argument of MOV must have an adress less than 8\n";
+				} else std::cout << "\033[1;31mERROR\033[0m: First argument of MOV must have an adress less than 8\n";
 			} else if (isNum(line[start + 3])) {
 				short cnst = getConstR(line[start + 3]);
 				std::string arg1 = getArgR(line[start + 1], 0);
@@ -229,7 +272,7 @@ public:
 						RAM[programmer++] = (var[arg1] << 8) | (var[arg2] << 4) | 0xf;
 						RAM[programmer++] = cnst;
 					}
-				} else std::cout << "ERROR: Arguments of MOV must have an adress les than 8\n";
+				} else std::cout << "\033[1;31mERROR\033[0m: Arguments of MOV must have an adress les than 8\n";
 			} else {
 				std::string arg1 = getArgR(line[start + 1], 0);
 				std::string arg2 = getArgR(line[start + 2], 1);
@@ -237,7 +280,7 @@ public:
 				if (var[arg1] < 8 && var[arg2] < 8) {
 					RAM[programmer] |= var[arg1] << 8;
 					RAM[programmer++] |= var[arg2] << 4;
-				} else std::cout << "ERROR: Arguments of MOV must have an adress less than 8\n";
+				} else std::cout << "\033[1;31mERROR\033[0m: Arguments of MOV must have an adress less than 8\n";
 			}
 		}
 
@@ -247,9 +290,9 @@ public:
 			else if (line[start] == "MUL") RAM[programmer] = 3 << 12;
 			else if (line[start] == "DIV") RAM[programmer] = 4 << 12; 
 			if (isNum(line[start + 1])) {
-				std::cout << "ERROR: First argument of an arithmetic operation mustn't be a number\n";
+				std::cout << "\033[1;31mERROR\033[0m: First argument of an arithmetic operation mustn't be a number\n";
 			} if (isNum(line[start + 2]) && isNum(line[start + 3])) {
-				std::cout << "ERROR: Only one of the second two arguments" <<
+				std::cout << "\033[1;31mERROR\033[0m: Only one of the second two arguments" <<
 					"of an arithmetic operation can be a number\n" << std::endl;
 			} else {
 				std::string arg1 {getArgR(line[start + 1], 0)};
@@ -274,8 +317,8 @@ public:
 					if (var[arg2] < 8 && var[arg3] < 8) {
 						RAM[programmer++] |= (var[arg1] << 8) | (var[arg2] << 4) | var[arg3];
 						if(hasc) RAM[programmer++] = cnst;
-					} else std::cout << "ERROR: 00101Arguments of an arithmetic operation must have an adress less than 8\n";
-				} else std::cout << "ERROR: First argument of an arithmetic operation must have an adress less than 8\n";
+					} else std::cout << "\033[1;31mERROR\033[0m: 00101Arguments of an arithmetic operation must have an adress less than 8\n";
+				} else std::cout << "\033[1;31mERROR\033[0m: First argument of an arithmetic operation must have an adress less than 8\n";
 			}
 		}
 
@@ -289,11 +332,11 @@ public:
 					break;
 				}
 			}
-			if (error) std::cout << "ERROR: Label \"" << line[start+3] << "\" does not exist\n";
+			if (error) std::cout << "\033[1;31mERROR\033[0m: Label \"" << line[start+3] << "\" does not exist\n";
 			else {
 				std::string arg1 {""}, arg2 {""};
 				if (line[start + 1] == "0" && line[start + 2] == "0") {
-					std::cout << "ERROR: Can't compare two zero values\n";
+					std::cout << "\033[1;31mERROR\033[0m: Can't compare two zero values\n";
 				} else if (line[start + 1] == "0") {
 					arg2 = getArgR(line[start + 2], 1);
 				} else if (line[start + 2] == "0") {
@@ -320,8 +363,8 @@ public:
 				short cnst = getConstR(line[start + 2]);
 				if (cnst < 16) RAM[programmer++] |= (var[arg1] << 8) | (8 << 4) | cnst;
 				else if (cnst < 128) RAM[programmer++] |= (var[arg1] << 8) | cnst;
-				else std::cout << "ERROR: Second argument of IN and OUT must be a number less than 128\n";
-			} else std::cout << "ERROR: Second argument of IN and OUT must be a number\n";
+				else std::cout << "\033[1;31mERROR\033[0m: Second argument of IN and OUT must be a number less than 128\n";
+			} else std::cout << "\033[1;31mERROR\033[0m: Second argument of IN and OUT must be a number\n";
 		}
 
 		if (line[start] == "JSR") {
@@ -333,7 +376,7 @@ public:
 					break;
 				}
 			}
-			if (error) std::cout << "ERROR: Label \"" << line[start + 1] << "\" does not exist\n";
+			if (error) std::cout << "\033[1;31mERROR\033[0m: Label \"" << line[start + 1] << "\" does not exist\n";
 			else {
 				lbSet.insert({line[start + 1], programmer});
 				RAM[programmer++] = 0;
@@ -406,12 +449,12 @@ public:
 			if (!isNum(line[2])) {
 				error = true;
 				std::cout << "(l" << it - code.begin() << 
-					") ERROR: Right hand side is not a number:\n" << *it << std::endl;
+					") \033[1;31mERROR\033[0m: Right hand side is not a number:\n" << *it << std::endl;
 			}
 			if (isNum(line[0])) {
 				error = true;
 				std::cout << "(l" << it - code.begin() << 
-					") ERROR: Left hand side must be a number:\n" << *it << std::endl;
+					") \033[1;31mERROR\033[0m: Left hand side must be a number:\n" << *it << std::endl;
 			}
 			if (!error)
 				var.insert(std::make_pair(line[0], getNum(line[2]))); 
@@ -427,7 +470,7 @@ public:
 			if (line[start] == "NCMD") {
 				error = true;
 				std::cout << "(l" << it - code.begin() << 
-					") ERROR: Operation does not exist (or it is lower case):\n" << *it << std::endl;
+					") \033[1;31mERROR\033[0m: Operation does not exist (or it is lower case):\n" << *it << std::endl;
 			}
 
 			for (auto &x : line) {
@@ -435,7 +478,7 @@ public:
 					var.find(getVar(x)) == var.end() && label.find(x) == label.end()) {
 					error = true;
 					std::cout << "(l" << it - code.begin() << 
-						") ERROR: Variable \"" << getVar(x) << "\" does not exist:\n" << *it << std::endl;
+						") \033[1;31mERROR\033[0m: Variable \"" << getVar(x) << "\" does not exist:\n" << *it << std::endl;
 				}
 			}
 
@@ -458,7 +501,7 @@ public:
 		PC = PC0;
 		SP = RAMS - 1;
 		if (debug_mode) {
-			std::cout << "WARNING: You are in debug mode, do you whant to run in normal mode? [Y/n]: \n";
+			std::cout << "\033[1;33mWARNING\033[0m: You are in debug mode, do you whant to run in normal mode? [Y/n]: \n";
 			std::string x;
 			std::getline(std::cin, x);
 			if (x == "" || x[0] == 'y' || x[0] == 'Y') {
@@ -628,7 +671,7 @@ int main(int argc, char const *argv[])
 	std::cout << "To see what you can do, type \"help\" or \"man\"\n";
 	std::string comm{""};
 	while (true) {
-		std::cout << "Enter a comand: ";
+		std::cout << "\033[3;4mEnter a command\033[0m: ";
 		std::getline(std::cin, comm);
 		if (comm == "") {
 			std::cout << "You haven't enterd a command!\n";
@@ -663,31 +706,35 @@ int main(int argc, char const *argv[])
 		} else if (comm == "next") {
 			K->step_until();
 		} else if (comm.substr(0, 4) == "load") {
-			std::cout << "WARNING: this feature is not jet implemented\n";
+			getArg(comm, ' ');
+			std::cout << "Opening: " << comm << std::endl;
+			K->loadCode(comm);
 		} else if (comm.substr(0, 4) == "save") {
-			std::cout << "WARNING: this feature is not jet implemented\n";
+			getArg(comm, ' ');
+			std::cout << "Saving to: " << comm << std::endl;
+			K->saveCode(comm);
 		} else if (comm == "help" || comm == "man") {
-			std::cout << "code - prints the current code you are writing\n";
-			std::cout << "compile - compiles the code and shows any errors you might have made\n";
-			std::cout << "run - executes the current code\n";
-			std::cout << "var - prints all existing variables and their values (run after compiling) in form:\n";
+			std::cout << "\033[37mcode\033[0m - prints the current code you are writing\n";
+			std::cout << "\033[37mcompile\033[0m - compiles the code and shows any errors you might have made\n";
+			std::cout << "\033[37mrun\033[0m - executes the current code\n";
+			std::cout << "\033[37mvar\033[0m - prints all existing variables and their values (run after compiling) in form:\n";
 			std::cout << "\t[name, address, value]\n";
-			std::cout << "ram a b - prints the current state of the ram from adress a to adress b\n";
-			std::cout << "exit | quit - exits the program\n";
+			std::cout << "\033[37mram a b\033[0m - prints the current state of the ram from adress a to adress b\n";
+			std::cout << "\033[37mexit | quit\033[0m - exits the program\n";
 			std::cout << "\n";
 			std::cout << "To change the code, there are few ways:\n";
 			std::cout << "\t1. change a line of code directly, ex.: 5 ADD A, B, C\n";
 			std::cout << "\t2. insert a new line of code, ex.: i4 ADD A, B, C\n";
 			std::cout << "\t3. append a new line of code to the end, ex.: a ADD A, B, C\n";
 			std::cout << "\n";
-			std::cout << "debug - starts the debug mode\n";
-			std::cout << "step - executes one line of code\n";
-			std::cout << "*break n - adds a break point on line n\n";
-			std::cout << "*break - prints all break points\n";
-			std::cout << "*next - executes code until a break point or the end\n";
+			std::cout << "\033[37mdebug\033[0m - starts the debug mode\n";
+			std::cout << "\033[37mstep\033[0m - executes one line of code\n";
+			std::cout << "\033[37mbreak n\033[0m - adds or removes a break point on line n\n";
+			std::cout << "\033[37mbreak\033[0m - prints all break points\n";
+			std::cout << "\033[37mnext\033[0m - executes code until a break point or the end\n";
 			std::cout << "\n";
-			std::cout << "*load <file> - Loads a file as code\n";
-			std::cout << "*save <file> - Saves the code as a file\n";
+			std::cout << "*\033[37mload <file>\033[0m - Loads a file as code\n";
+			std::cout << "*\033[37msave <file>\033[0m - Saves the code as a file\n";
 		} else {
 			std::string arg;
 			if(!hasChar(comm, ' ')) arg = comm;
