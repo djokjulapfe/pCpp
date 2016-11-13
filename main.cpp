@@ -219,7 +219,6 @@ public:
 
 	void add_break(const unsigned short & i) {
 		for (auto &x : break_point) {
-			std::cout << i << " == " << x;
 			if (i == dbg[x]) {
 				break_point.erase(x);
 				return;
